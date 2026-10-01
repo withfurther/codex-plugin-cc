@@ -75,20 +75,55 @@ function buildBranchComparison(cwd, baseRef) {
   };
 }
 
+function decodeGitPath(output) {
+  if (!output.endsWith("\n") || output.length < 2 || output.includes("\0")) {
+    throw new Error("Git returned an invalid workspace path.");
+  }
+  return output.slice(0, -1);
+}
+
 export function ensureGitRepository(cwd) {
   const result = git(cwd, ["rev-parse", "--show-toplevel"]);
   const errorCode = result.error && "code" in result.error ? result.error.code : null;
   if (errorCode === "ENOENT") {
     throw new Error("git is not installed. Install Git and retry.");
   }
-  if (result.status !== 0) {
+  if (result.error || result.signal || result.status !== 0) {
     throw new Error("This command must run inside a Git repository.");
   }
-  return result.stdout.trim();
+  return decodeGitPath(result.stdout);
 }
 
 export function getRepoRoot(cwd) {
-  return gitChecked(cwd, ["rev-parse", "--show-toplevel"]).stdout.trim();
+  return ensureGitRepository(cwd);
+}
+
+/** Resolve an explicit tracking workspace belonging to the execution repository. */
+export function resolveReviewStateWorkspace(cwd, stateCwd) {
+  const locationVariables = new Set(["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR"]);
+  if (Object.keys(process.env).some((name) => locationVariables.has(name) || name.startsWith("GIT_CONFIG"))) {
+    throw new Error("Review state workspaces cannot use inherited Git location or configuration overrides.");
+  }
+  if (typeof stateCwd !== 'string' || !stateCwd) {
+    throw new Error('The review state workspace must name a Git working directory.');
+  }
+  if (!fs.existsSync(stateCwd) || !fs.statSync(stateCwd).isDirectory()) {
+    throw new Error('The review state workspace must be an existing directory.');
+  }
+  const stateRoot = ensureGitRepository(stateCwd);
+  ensureGitRepository(cwd);
+  const commonDirectory = (workspace) => {
+    const result = git(workspace, ['rev-parse', '--git-common-dir']);
+    if (result.error || result.signal || result.status !== 0) {
+      throw new Error('Git could not resolve the review state workspace.');
+    }
+    const directory = decodeGitPath(result.stdout);
+    return fs.realpathSync.native(path.resolve(workspace, directory));
+  };
+  if (commonDirectory(cwd) !== commonDirectory(stateRoot)) {
+    throw new Error('The review state workspace must belong to the same Git repository as --cwd.');
+  }
+  return fs.realpathSync.native(stateRoot);
 }
 
 export function detectDefaultBranch(cwd) {
