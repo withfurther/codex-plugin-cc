@@ -98,6 +98,24 @@ Examples:
 
 This command is read-only and will not perform any changes. When run in the background you can use [`/codex:status`](#codexstatus) to check on the progress and [`/codex:cancel`](#codexcancel) to cancel the ongoing task.
 
+### Review execution and tracking workspaces
+
+The companion CLI accepts `--cwd <path>` for review execution and optional
+`--state-cwd <path>` for its job records, progress, and logs. Both must be existing
+worktrees of the same Git repository. Inherited `GIT_DIR`, `GIT_WORK_TREE`,
+`GIT_COMMON_DIR`, or `GIT_CONFIG*` overrides are refused when `--state-cwd` is used,
+so they cannot redirect validation or execution. Git path decoding preserves
+trailing whitespace in workspace names. This lets a review execute in an immutable
+checkout while `/codex:status` and `/codex:result` in the source workspace retain
+access to the job after that checkout is removed. Without `--state-cwd`, tracking
+uses the execution workspace as before. These options also apply to adversarial
+reviews; they do not alter task tracking or select a different review target.
+
+Integrations can run `node plugins/codex/scripts/codex-companion.mjs capabilities --json`
+to check support without authentication, Git access, job creation, or a Codex process.
+Schema version 1 advertises `review.state-cwd.v1` in its `features` array. A caller
+requiring separate tracking must refuse when that feature is absent.
+
 ### `/codex:adversarial-review`
 
 Runs a **steerable** review that questions the chosen implementation and design.

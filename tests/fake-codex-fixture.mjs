@@ -413,7 +413,7 @@ rl.on("line", (line) => {
         }
         const turnId = nextTurnId(state);
         send({ id: message.id, result: { turn: buildTurn(turnId), reviewThreadId: reviewThread.id } });
-        emitTurnCompleted(reviewThread.id, turnId, [
+        const reviewItems = [
           {
             started: { type: "enteredReviewMode", id: turnId, review: "current changes" }
           },
@@ -432,7 +432,22 @@ rl.on("line", (line) => {
           {
             completed: { type: "exitedReviewMode", id: turnId, review: nativeReviewText(message.params.target) }
           }
-        ]);
+        ];
+        if (BEHAVIOR === "controlled-review") {
+          send({ method: "turn/started", params: { threadId: reviewThread.id, turn: buildTurn(turnId) } });
+          send({ method: "item/started", params: { threadId: reviewThread.id, turnId,
+            item: { type: "enteredReviewMode", id: turnId, review: "current changes" } } });
+          fs.writeFileSync(path.join(path.dirname(STATE_PATH), "review-ready"), "ready");
+          const deadline = Date.now() + 10000;
+          const timer = setInterval(() => {
+            if (fs.existsSync(path.join(path.dirname(STATE_PATH), "review-release")) || Date.now() >= deadline) {
+              clearInterval(timer);
+              emitTurnCompleted(reviewThread.id, turnId, reviewItems);
+            }
+          }, 20);
+        } else {
+          emitTurnCompleted(reviewThread.id, turnId, reviewItems);
+        }
         break;
       }
 
